@@ -8,6 +8,7 @@
  In options, we can specify:
  * Texture parameters for an auto-generated target texture
  * depthBuffer/stencilBuffer: Booleans to indicate if we should generate these buffers
+ * depth: A target depth texture of type THREE.DepthTexture. This will override the depthBuffer/stencilBUffer settings
 */
 THREE.WebGLRenderTarget = function ( width, height, options ) {
 
@@ -22,8 +23,11 @@ THREE.WebGLRenderTarget = function ( width, height, options ) {
 
 	this.texture = new THREE.Texture( undefined, undefined, options.wrapS, options.wrapT, options.magFilter, options.minFilter, options.format, options.type, options.anisotropy );
 
-	this.depthBuffer = options.depthBuffer !== undefined ? options.depthBuffer : true;
-	this.stencilBuffer = options.stencilBuffer !== undefined ? options.stencilBuffer : true;
+	this.depth = options.depth !== undefined ? options.depth : null;
+	if ( !this.depth ) {
+		this.depthBuffer = options.depthBuffer !== undefined ? options.depthBuffer : true;
+		this.stencilBuffer = options.stencilBuffer !== undefined ? options.stencilBuffer : true;
+	}
 
 };
 
@@ -56,6 +60,8 @@ THREE.WebGLRenderTarget.prototype = {
 		this.height = source.height;
 
 		this.texture = source.texture.clone();
+		this.texture = this.texture.clone();
+		if (source.depth) this.depth = source.depth.clone();
 
 		this.depthBuffer = source.depthBuffer;
 		this.stencilBuffer = source.stencilBuffer;
