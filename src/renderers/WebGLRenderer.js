@@ -530,56 +530,43 @@ THREE.WebGLRenderer = function ( parameters ) {
 
 	// Buffer deallocation
 
+	function deallocateResources( resources ) {
+		resources.forEach( function ( r ) {
+			if ( r instanceof _gl.WebGLTexture ) {
+				_gl.deleteTexture( r );
+			}
+			else if ( r instanceof _gl.WebGLFramebuffer ) {
+				_gl.deleteFramebuffer( r );
+			}
+			else if ( r instanceof _gl.WebGLRenderbuffer ) {
+				_gl.deleteRenderuffer( r );
+			}
+		});
+	}
+
 	function deallocateTexture( texture ) {
 
 		var textureProperties = properties.get( texture );
 
-		if ( texture.image && textureProperties.__image__webglTextureCube ) {
-
-			// cube texture
-
-			_gl.deleteTexture( textureProperties.__image__webglTextureCube );
-
-		} else {
-
-			// 2D texture
-
-			if ( textureProperties.__webglInit === undefined ) return;
-
-			_gl.deleteTexture( textureProperties.__webglTexture );
-
-		}
+		deallocateResources( textureProperties.resources );
 
 		// remove all webgl properties
 		properties.delete( texture );
 
 	}
 
+	// FIXME: How do we know who created these resources?
 	function deallocateRenderTarget( renderTarget ) {
 
 		var renderTargetProperties = properties.get( renderTarget );
 		var textureProperties = properties.get( renderTarget.texture );
+		var depthProperties = properties.get( renderTarget.depth );
 
-		if ( ! renderTarget || textureProperties.__webglTexture === undefined ) return;
+		deallocateResources( depthProperties.resources);
+		deallocateResources( textureProperties.resources);
+		deallocateResources( renderTargetProperties.resources);
 
-		_gl.deleteTexture( textureProperties.__webglTexture );
-
-		if ( renderTarget instanceof THREE.WebGLRenderTargetCube ) {
-
-			for ( var i = 0; i < 6; i ++ ) {
-
-				_gl.deleteFramebuffer( renderTargetProperties.__webglFramebuffer[ i ] );
-				_gl.deleteRenderbuffer( renderTargetProperties.__webglRenderbuffer[ i ] );
-
-			}
-
-		} else {
-
-			_gl.deleteFramebuffer( renderTargetProperties.__webglFramebuffer );
-			_gl.deleteRenderbuffer( renderTargetProperties.__webglRenderbuffer );
-
-		}
-
+		properties.delete( renderTarget.depth );
 		properties.delete( renderTarget.texture );
 		properties.delete( renderTarget );
 
@@ -1158,13 +1145,13 @@ THREE.WebGLRenderer = function ( parameters ) {
 		lensFlarePlugin.render( scene, camera, _currentWidth, _currentHeight );
 
 		// Generate mipmap if we're using any kind of mipmap filtering
-	
+
 		if ( renderTarget ) {
 			var texture = renderTarget.texture;
 			if ( texture.generateMipmaps && 
 					 texture.minFilter !== THREE.NearestFilter && 
 					 texture.minFilter !== THREE.LinearFilter ) {
-				 updateRenderTargetMipmap( renderTarget );
+				updateRenderTargetMipmap( renderTarget );
 			}
 		}
 
@@ -1806,6 +1793,7 @@ THREE.WebGLRenderer = function ( parameters ) {
 		if ( uvScaleMap !== undefined ) {
 
 			if ( uvScaleMap instanceof THREE.WebGLRenderTarget ) uvScaleMap = uvScaleMap.texture;
+
 			var offset = uvScaleMap.offset;
 			var repeat = uvScaleMap.repeat;
 
@@ -2323,7 +2311,7 @@ THREE.WebGLRenderer = function ( parameters ) {
 						setCubeTextureDynamic( texture.texture, textureUnit );
 
 					} else if ( texture instanceof THREE.WebGLRenderTarget ) {
-
+						
 						_this.setTexture( texture.texture, textureUnit );
 
 					} else {
@@ -2366,9 +2354,9 @@ THREE.WebGLRenderer = function ( parameters ) {
 
 							setCubeTexture( texture, textureUnit );
 
-						} else if ( texture instanceof THREE.WebGLRenderTargetCube ) {
+						} else if ( texture instanceof THREE.WebGLRenderTarget ) {
 
-							setCubeTextureDynamic( texture, textureUnit );
+							setCubeTexture( texture.texture, textureUnit );
 
 						} else {
 
@@ -2683,15 +2671,12 @@ THREE.WebGLRenderer = function ( parameters ) {
 
 	function uploadTexture( textureProperties, texture, slot ) {
 
-		if ( textureProperties.__webglInit === undefined ) {
-
-			textureProperties.__webglInit = true;
-
-			texture.__webglInit = true;
+		if ( textureProperties.__webglTexture === undefined ) {
 
 			texture.addEventListener( 'dispose', onTextureDispose );
 
 			textureProperties.__webglTexture = _gl.createTexture();
+			textureProperties.resources.push(textureProperties.__webglTexture);
 
 			_infoMemory.textures ++;
 
@@ -2870,6 +2855,7 @@ THREE.WebGLRenderer = function ( parameters ) {
 					texture.addEventListener( 'dispose', onTextureDispose );
 
 					textureProperties.__image__webglTextureCube = _gl.createTexture();
+					textureProperties.resources.push(textureProperties.__image__webglTextureCube);
 
 					_infoMemory.textures ++;
 
@@ -3026,15 +3012,19 @@ THREE.WebGLRenderer = function ( parameters ) {
 
 			var renderTargetProperties = properties.get( renderTarget );
 			var textureProperties = properties.get( renderTarget.texture );
+			var depthProperties = properties.get( renderTarget.depth );
 
 			if ( renderTarget.depthBuffer === undefined ) renderTarget.depthBuffer = true;
 			if ( renderTarget.stencilBuffer === undefined ) renderTarget.stencilBuffer = true;
 
 			renderTarget.addEventListener( 'dispose', onRenderTargetDispose );
 
-			textureProperties.__webglTexture = _gl.createTexture();
+			if ( textureProperties.__webglTexture == undefined ) {
+				textureProperties.__webglTexture = _gl.createTexture();
+				textureProperties.resources.push(textureProperties.__webglTexture);
+				_infoMemory.textures ++;
+			}
 
-			_infoMemory.textures ++;
 
 			// Setup texture, create render and frame buffers
 
@@ -3044,8 +3034,10 @@ THREE.WebGLRenderer = function ( parameters ) {
 
 			if ( isCube ) {
 
+				// FIXME: If we're sharing depth buffers, this needs to be handled
+				// We might also want to check that the shared depth buffer is compatible (cube map)
 				renderTargetProperties.__webglFramebuffer = [];
-				renderTargetProperties.__webglRenderbuffer = [];
+				depthProperties.__webglDepthbuffer = [];
 
 				state.bindTexture( _gl.TEXTURE_CUBE_MAP, textureProperties.__webglTexture );
 
@@ -3054,29 +3046,22 @@ THREE.WebGLRenderer = function ( parameters ) {
 				for ( var i = 0; i < 6; i ++ ) {
 
 					renderTargetProperties.__webglFramebuffer[ i ] = _gl.createFramebuffer();
-					renderTargetProperties.__webglRenderbuffer[ i ] = _gl.createRenderbuffer();
+					depthProperties.__webglDepthbuffer[ i ] = _gl.createRenderbuffer();
+					renderTargetProperties.resources.push(renderTargetProperties.__webglFramebuffer[ i ]);
+					depthProperties.resources.push(depthProperties.__webglDepthbuffer[ i ]);
 					state.texImage2D( _gl.TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, glFormat, renderTarget.width, renderTarget.height, 0, glFormat, glType, null );
 
 					setupFrameBuffer( renderTargetProperties.__webglFramebuffer[ i ], renderTarget, _gl.TEXTURE_CUBE_MAP_POSITIVE_X + i );
-					setupRenderBuffer( renderTargetProperties.__webglRenderbuffer[ i ], renderTarget );
+					setupRenderBuffer( depthProperties.__webglDepthbuffer[ i ], renderTarget );
 
 				}
 
-				if ( renderTarget.texture.generateMipmaps && isTargetPowerOfTwo ) _gl.generateMipmap( _gl.TEXTURE_CUBE_MAP );
+				if ( renderTarget.generateMipmaps && isTargetPowerOfTwo ) _gl.generateMipmap( _gl.TEXTURE_CUBE_MAP );
 
 			} else {
 
 				renderTargetProperties.__webglFramebuffer = _gl.createFramebuffer();
-
-				if ( renderTarget.shareDepthFrom ) {
-
-					renderTargetProperties.__webglRenderbuffer = renderTarget.shareDepthFrom.__webglRenderbuffer;
-
-				} else {
-
-					renderTargetProperties.__webglRenderbuffer = _gl.createRenderbuffer();
-
-				}
+				renderTargetProperties.resources.push(renderTargetProperties.__webglFramebuffer);
 
 				state.bindTexture( _gl.TEXTURE_2D, textureProperties.__webglTexture );
 				setTextureParameters( _gl.TEXTURE_2D, renderTarget.texture, isTargetPowerOfTwo );
@@ -3085,24 +3070,30 @@ THREE.WebGLRenderer = function ( parameters ) {
 
 				setupFrameBuffer( renderTargetProperties.__webglFramebuffer, renderTarget, _gl.TEXTURE_2D );
 
-				if ( renderTarget.shareDepthFrom ) {
+				if ( depthProperties.__webglDepthbuffer !== undefined ) {
 
+					depthProperties.__webglDepthbuffer = depthProperties.__webglDepthbuffer;
+
+					// FIXME: Directly inherit settings from shared depth buffer
 					if ( renderTarget.depthBuffer && ! renderTarget.stencilBuffer ) {
 
-						_gl.framebufferRenderbuffer( _gl.FRAMEBUFFER, _gl.DEPTH_ATTACHMENT, _gl.RENDERBUFFER, renderTargetProperties.__webglRenderbuffer );
+						_gl.framebufferRenderbuffer( _gl.FRAMEBUFFER, _gl.DEPTH_ATTACHMENT, _gl.RENDERBUFFER, depthProperties.__webglDepthbuffer );
 
 					} else if ( renderTarget.depthBuffer && renderTarget.stencilBuffer ) {
 
-						_gl.framebufferRenderbuffer( _gl.FRAMEBUFFER, _gl.DEPTH_STENCIL_ATTACHMENT, _gl.RENDERBUFFER, renderTargetProperties.__webglRenderbuffer );
+						_gl.framebufferRenderbuffer( _gl.FRAMEBUFFER, _gl.DEPTH_STENCIL_ATTACHMENT, _gl.RENDERBUFFER, depthProperties.__webglDepthbuffer );
 
 					}
 
 				} else {
 
-					setupRenderBuffer( renderTargetProperties.__webglRenderbuffer, renderTarget );
+					depthProperties.__webglDepthbuffer = _gl.createRenderbuffer();
+					depthProperties.resources.push(depthProperties.__webglDepthBuffer);
 
+					setupRenderBuffer( depthProperties.__webglDepthbuffer, renderTarget );
 				}
 
+				// FIXME: Shouldn't we defer this until after we've rendered into the texture?
 				if ( renderTarget.texture.generateMipmaps && isTargetPowerOfTwo ) _gl.generateMipmap( _gl.TEXTURE_2D );
 
 			}
