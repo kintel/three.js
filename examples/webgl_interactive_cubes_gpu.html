@@ -35,7 +35,7 @@
 
 		<div id="container"></div>
 
-		<script src="../build/three.min.js"></script>
+		<script src="../build/three.js"></script>
 
 		<script src="js/controls/TrackballControls.js"></script>
 
@@ -84,9 +84,9 @@
 				light.position.set( 0, 500, 2000 );
 				scene.add( light );
 
-				var geometry = new THREE.Geometry(),
-				pickingGeometry = new THREE.Geometry(),
-				pickingMaterial = new THREE.MeshBasicMaterial( { vertexColors: THREE.VertexColors } ),
+//				var geometry = new THREE.Geometry(),
+//				pickingGeometry = new THREE.Geometry(),
+				var pickingMaterial = new THREE.MeshBasicMaterial( { vertexColors: THREE.VertexColors } ),
 				defaultMaterial = new THREE.MeshLambertMaterial({ color: 0xffffff, shading: THREE.FlatShading, vertexColors: THREE.VertexColors	} );
 
 				function applyVertexColors( g, c ) {
@@ -111,7 +111,9 @@
 				var matrix = new THREE.Matrix4();
 				var quaternion = new THREE.Quaternion();
 
-				for ( var i = 0; i < 5000; i ++ ) {
+				for ( var i = 0; i < 500; i ++ ) {
+  				var geometry = new THREE.Geometry(),
+				pickingGeometry = new THREE.Geometry();
 
 					var position = new THREE.Vector3();
 					position.x = Math.random() * 10000 - 5000;
@@ -124,24 +126,28 @@
 					rotation.z = Math.random() * 2 * Math.PI;
 
 					var scale = new THREE.Vector3();
-					scale.x = Math.random() * 200 + 100;
-					scale.y = Math.random() * 200 + 100;
-					scale.z = Math.random() * 200 + 100;
+					scale.x = Math.random() * 500 + 300;
+					scale.y = Math.random() * 500 + 300;
+					scale.z = Math.random() * 500 + 300;
 
 					quaternion.setFromEuler( rotation, false );
 					matrix.compose( position, quaternion, scale );
 
 					// give the geom's vertices a random color, to be displayed
 
-					applyVertexColors( geom, color.setHex( Math.random() * 0xffffff ) );
+                                        var boxgeom = new THREE.BoxGeometry( 1, 1, 1 );
+                                        var col = color.setHex( Math.random() * 0xffffff ).clone();
+					applyVertexColors( boxgeom, col );
 
-					geometry.merge( geom, matrix );
+					//geometry.merge( geom, matrix );
 
 					// give the geom's vertices a color corresponding to the "id"
 
-					applyVertexColors( geom, color.setHex( i ) );
+                                        var pickboxgeom = new THREE.BoxGeometry( 1, 1, 1 );
+                                        var idcol = color.setHex( i ).clone();
+					applyVertexColors( pickboxgeom, idcol );
 
-					pickingGeometry.merge( geom, matrix );
+//					pickingGeometry.merge( geom, matrix );
 
 					pickingData[ i ] = {
 
@@ -151,12 +157,48 @@
 
 					};
 
+				  var drawnObject = new THREE.Mesh( boxgeom, defaultMaterial );
+                                  drawnObject.matrixAutoUpdate = false; // We're setting the matrix directly
+                                  drawnObject.matrix = matrix.clone();
+				  scene.add( drawnObject );
+                                  var pickingObject = new THREE.Mesh( pickboxgeom, pickingMaterial )
+                                  pickingObject.matrixAutoUpdate = false; // We're setting the matrix directly
+                                  pickingObject.matrix = matrix.clone();
+                                  pickingObject.obj_color = idcol;
+				  pickingScene.add( pickingObject );
 				}
 
-				var drawnObject = new THREE.Mesh( geometry, defaultMaterial );
-				scene.add( drawnObject );
+//				var drawnObject = new THREE.Mesh( geometry, defaultMaterial );
+//				scene.add( drawnObject );
+//				pickingScene.add( new THREE.Mesh( pickingGeometry, pickingMaterial ) );
 
-				pickingScene.add( new THREE.Mesh( pickingGeometry, pickingMaterial ) );
+
+  var idColorShader = {
+    uniforms: {
+      obj_color: {type: '3f'}
+    },
+    vertexShader: '\
+varying vec4 pos;\n\
+void main() {\n\
+  vec4 mvPosition;\n\
+  mvPosition = modelViewMatrix * vec4( position, 1.0 );\n\
+  gl_Position = pos = projectionMatrix * mvPosition;\n\
+}\n',
+    fragmentShader: '\
+uniform vec3 obj_color;\n\
+varying vec4 pos;\n\
+void main() {\n\
+  gl_FragColor = vec4(obj_color.xyz, 0);\n\
+}\n'
+  };
+  var idColorMaterial = new THREE.ShaderMaterial( {
+    blending: THREE.NoBlending,
+    uniforms: idColorShader.uniforms,
+    vertexShader: idColorShader.vertexShader,
+    fragmentShader: idColorShader.fragmentShader
+  } );
+  idColorMaterial.uniforms.obj_color.value = [1,1,1,1];
+                                pickingScene.overrideMaterial = idColorMaterial;
 
 				highlightBox = new THREE.Mesh(
 					new THREE.BoxGeometry( 1, 1, 1 ),

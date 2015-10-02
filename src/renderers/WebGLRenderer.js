@@ -1730,6 +1730,7 @@ THREE.WebGLRenderer = function ( parameters ) {
 
 		}
 
+		if (p_uniforms.obj_color && object.hasOwnProperty('obj_color')) _gl.uniform3f( p_uniforms.obj_color, object.obj_color.r, object.obj_color.g, object.obj_color.b );
 		loadUniformsMatrices( p_uniforms, object );
 
 		if ( p_uniforms.modelMatrix !== undefined ) {
